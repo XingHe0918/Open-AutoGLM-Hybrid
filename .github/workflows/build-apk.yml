@@ -10,6 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # 添加超时限制
     
     steps:
     - name: Checkout code
@@ -20,14 +21,40 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        
+    
+    # =============== 关键修复：添加这个步骤！ ===============
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        api-level: 34  # 根据你项目的配置修改
+        build-tools-version: '34.0.0'
+        ndk-version: '25.2.9519653'
+        cmake-version: '3.22.1'
+        # 接受许可证（重要！）
+        licenses: |
+          android-sdk-license-5be876d5
+          android-sdk-license-33b8a2b4
+          android-googletv-license
+          android-sdk-arm-dbt-license
+          google-gdk-license
+    # =====================================================
+      
     - name: Grant execute permission for gradlew
       run: chmod +x android-app/gradlew
       
+    # =============== 优化构建参数 ===============
     - name: Build Debug APK
       run: |
         cd android-app
-        ./gradlew assembleDebug --stacktrace
+        ./gradlew assembleDebug \
+          --no-daemon \
+          --no-parallel \
+          --max-workers=2 \
+          -x test \
+          -x lint \
+          --build-cache \
+          --stacktrace
+    # ===========================================
         
     - name: Upload APK
       uses: actions/upload-artifact@v4
@@ -39,7 +66,14 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/')
       run: |
         cd android-app
-        ./gradlew assembleRelease --stacktrace
+        ./gradlew assembleRelease \
+          --no-daemon \
+          --no-parallel \
+          --max-workers=2 \
+          -x test \
+          -x lint \
+          --build-cache \
+          --stacktrace
         
     - name: Upload Release APK (on tag)
       if: startsWith(github.ref, 'refs/tags/')
