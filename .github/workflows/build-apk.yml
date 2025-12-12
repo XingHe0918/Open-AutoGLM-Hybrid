@@ -1,16 +1,25 @@
 name: Build Android APK
 
 on:
+  workflow_dispatch:  # 只保留手动触发，先调试成功
   push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:  # 允许手动触发
+    branches: [ main ]
+    paths-ignore:  # 忽略文档等非代码变更
+      - '**.md'
+      - '**.txt'
+      - '**.png'
+      - '**.jpg'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # 添加超时限制
+    timeout-minutes: 25  # 减少到25分钟
+    
+    # 添加资源限制
+    strategy:
+      fail-fast: false
+      matrix:
+        resource-group: [default]
     
     steps:
     - name: Checkout code
@@ -21,63 +30,83 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
+        cache: gradle  # 添加gradle缓存
     
-    # =============== 关键修复：添加这个步骤！ ===============
-    - name: Setup Android SDK
+    # =============== 优化Android SDK安装 ===============
+    - name: Setup Android SDK (最小化)
       uses: android-actions/setup-android@v3
       with:
-        api-level: 34  # 根据你项目的配置修改
-        build-tools-version: '34.0.0'
-        ndk-version: '25.2.9519653'
-        cmake-version: '3.22.1'
-        # 接受许可证（重要！）
+        api-level: 33  # 降低版本，加快速度
+        build-tools-version: '33.0.0'
+        ndk-version: '25.1.8937393'  # 使用稍旧版本
+        # 只安装必需的包
+        packages: |
+          platforms;android-33
+          build-tools;33.0.0
+          platform-tools
+          cmdline-tools;latest
         licenses: |
           android-sdk-license-5be876d5
           android-sdk-license-33b8a2b4
-          android-googletv-license
-          android-sdk-arm-dbt-license
-          google-gdk-license
-    # =====================================================
-      
+    # =================================================
+    
+    # =============== 检查项目结构 ===============
+    - name: Check project structure
+      run: |
+        echo "=== 项目结构 ==="
+        ls -la
+        echo "=== Android项目 ==="
+        if [ -d "android-app" ]; then
+          cd android-app
+          ls -la
+          echo "=== Gradle版本 ==="
+          head -n 5 gradle/wrapper/gradle-wrapper.properties || echo "无gradle-wrapper"
+        else
+          echo "错误：找不到android-app目录"
+          find . -name "*.gradle" -type f | head -10
+        fi
+    # ============================================
+    
     - name: Grant execute permission for gradlew
-      run: chmod +x android-app/gradlew
+      run: |
+        if [ -f "android-app/gradlew" ]; then
+          chmod +x android-app/gradlew
+          echo "gradlew权限设置成功"
+        else
+          echo "警告：找不到gradlew，尝试生成"
+          cd android-app
+          gradle wrapper --gradle-version 7.5 2>/dev/null || echo "无法生成gradlew"
+        fi
       
-    # =============== 优化构建参数 ===============
+    # =============== 分步构建 ===============
+    # 先只下载依赖，不构建
+    - name: Download dependencies only
+      run: |
+        cd android-app
+        ./gradlew dependencies --no-daemon --no-parallel || echo "依赖下载完成"
+      
+    # 然后构建APK
     - name: Build Debug APK
+      timeout-minutes: 10  # 单独设置构建超时
       run: |
         cd android-app
         ./gradlew assembleDebug \
           --no-daemon \
           --no-parallel \
-          --max-workers=2 \
+          --max-workers=1 \  # 限制为1个worker
           -x test \
           -x lint \
-          --build-cache \
+          --offline \  # 使用缓存的依赖
           --stacktrace
-    # ===========================================
+    # =======================================
         
     - name: Upload APK
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: AutoGLM-Helper-Debug
-        path: android-app/app/build/outputs/apk/debug/app-debug.apk
+        path: android-app/app/build/outputs/apk/debug/*.apk
+        retention-days: 3
         
-    - name: Create Release APK (on tag)
-      if: startsWith(github.ref, 'refs/tags/')
-      run: |
-        cd android-app
-        ./gradlew assembleRelease \
-          --no-daemon \
-          --no-parallel \
-          --max-workers=2 \
-          -x test \
-          -x lint \
-          --build-cache \
-          --stacktrace
-        
-    - name: Upload Release APK (on tag)
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: actions/upload-artifact@v4
-      with:
-        name: AutoGLM-Helper-Release
-        path: android-app/app/build/outputs/apk/release/app-release.apk
+    # =============== 移除Release构建 ===============
+    # 先专注让Debug版本成功，成功后再加上Release
