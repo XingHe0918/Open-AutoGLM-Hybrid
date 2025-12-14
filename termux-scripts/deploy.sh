@@ -153,7 +153,7 @@ download_hybrid_scripts() {
     
     # 下载 phone_controller.py (自动降级逻辑)
     # 注意: 这里需要替换为实际的下载链接
-    wget -O ~/.autoglm/phone_controller.py https://github.com/XingHe0918/Open-AutoGLM-Hybrid/tree/main/termux-scripts/phone_controller.py
+    wget -O ~/.autoglm/phone_controller.py https://raw.githubusercontent.com/XingHe0918/Open-AutoGLM-Hybrid/main/termux-scripts/phone_controller.py
     
     # 暂时使用本地创建
     # cat > ~/.autoglm/phone_controller.py << 'PYTHON_EOF'
