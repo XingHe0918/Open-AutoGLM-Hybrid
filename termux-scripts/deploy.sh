@@ -158,8 +158,8 @@ download_hybrid_scripts() {
     # 暂时使用本地创建
     # cat > ~/.autoglm/phone_controller.py << 'PYTHON_EOF'
 # 这个文件会在后续步骤中创建
-pass
-PYTHON_EOF
+#pass
+#PYTHON_EOF
     
     print_success "混合方案脚本下载完成"
 }
